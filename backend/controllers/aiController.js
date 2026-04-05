@@ -1,7 +1,19 @@
-const { GoogleGenAI } = require("@google/genai");
+const Groq = require("groq-sdk");
 const { conceptExplainPrompt, questionAnswerPrompt } = require("../utils/prompts");
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// Sanitize literal control chars inside JSON string values
+const sanitizeJson = (text) => {
+  return text.replace(/"((?:[^"\\]|\\.)*)"/g, (match, content) => {
+    const sanitized = content
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      .replace(/\t/g, "\\t")
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+    return `"${sanitized}"`;
+  });
+};
 
 // @desc    Generate interview questions and answers using Gemini
 // @route   POST /api/generate-questions
@@ -16,12 +28,12 @@ if (!role || !experience || !topicsToFocus || !numberOfQuestions) {
 
 const prompt = questionAnswerPrompt(role, experience, topicsToFocus, numberOfQuestions);
 
-const response = await ai.models.generateContent({
-  model: "gemini-2.0-flash-lite",
-  contents: prompt,
+const response = await groq.chat.completions.create({
+  messages: [{ role: "user", content: prompt }],
+  model: "llama-3.3-70b-versatile",
 });
 
-let rawText = response.text;
+let rawText = response.choices[0]?.message?.content || "";
 
 // Clean it: Remove ```json and ``` from beginning and end
 const cleanedText = rawText
@@ -29,15 +41,15 @@ const cleanedText = rawText
   .replace(/```$/, "")        // remove ending ```
   .trim();                    // remove extra spaces
 
-// Now safe to parse
-const data = JSON.parse(cleanedText);
+// Sanitize and parse
+const data = JSON.parse(sanitizeJson(cleanedText));
 
 res.status(200).json(data);
 
 
   } catch (error) {
     res.status(500).json({
-      message: "Failed to generate questions",
+      message: error.message || "Failed to generate questions",
       error: error.message,
     });
   }
@@ -56,12 +68,12 @@ const generateConceptExplanation = async (req, res) => {
 
 const prompt = conceptExplainPrompt(question);
 
-const response = await ai.models.generateContent({
-  model: "gemini-2.0-flash-lite",
-  contents: prompt,
+const response = await groq.chat.completions.create({
+  messages: [{ role: "user", content: prompt }],
+  model: "llama-3.3-70b-versatile",
 });
 
-let rawText = response.text;
+let rawText = response.choices[0]?.message?.content || "";
 
 // Clean it: Remove ```json and ``` from beginning and end
 const cleanedText = rawText
@@ -69,15 +81,15 @@ const cleanedText = rawText
   .replace(/```$/, "")        // remove ending ```
   .trim();                    // remove extra spaces
 
-// Now safe to parse
-const data = JSON.parse(cleanedText);
+// Sanitize and parse
+const data = JSON.parse(sanitizeJson(cleanedText));
 
 res.status(200).json(data);
 
         
     } catch (error) {
         res.status(500).json({
-      message: "Failed to generate questions",
+      message: error.message || "Failed to generate explanations",
       error: error.message,
     });
     }
